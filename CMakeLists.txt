@@ -1,20 +1,34 @@
-cmake_minimum_required(VERSION 2.8.6)
+cmake_minimum_required(VERSION 3.29)
 project (Example)
 
-#set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};Modules/")
 find_package(Java REQUIRED COMPONENTS Runtime Development)
 find_package(JNI REQUIRED)
-find_package(SWIG REQUIRED)
+find_package(SWIG 4.0 REQUIRED)
 include(UseJava)
 include(UseSWIG)
 
-add_library (Example "example.hpp" "example.cpp")
+# Build the C++ library
+#######################
+add_library (Example example.hpp example.cpp)
 SET_TARGET_PROPERTIES(Example PROPERTIES LINKER_LANGUAGE CXX)
 
-set(CMAKE_SWIG_FLAGS -package example)
-set(CMAKE_SWIG_OUTDIR "example")
+# Generate the bindings with SWIG
+#################################
+
 SET_SOURCE_FILES_PROPERTIES(example.i PROPERTIES CPLUSPLUS 1)
-SET_SOURCE_FILES_PROPERTIES(example.i PROPERTIES SWIG_FLAGS "-includeall")
+# set(CMAKE_SWIG_FLAGS -package example)
+swig_add_library(example_swig
+                 TYPE SHARED
+                 LANGUAGE java
+		 OUTPUT_DIR example
+		 SOURCES example.i example.hpp example.cpp)
+swig_link_libraries(example_swig Example)
+set(SWIG_USE_SWIG_DEPENDENCIES TRUE)
+set_property(TARGET example_swig
+             APPEND PROPERTY INCLUDE_DIRECTORIES ${JNI_INCLUDE_DIRS} ${CMAKE_HOME_DIRECTORY})
+
+# Generate the jar file
+#######################
 
 set(EXAMPLE_JAVA_FILES
   example/Shape.java
@@ -34,15 +48,13 @@ add_jar(example_swig_jar ${EXAMPLE_JAVA_FILES}
 install_jar(example_swig_jar ${LIB_INSTALL_DIR}/example)
 install_jni_symlink(example_swig_jar .)
 
-swig_add_module(example_swig java example.i "example.hpp" "example.cpp")
-swig_link_libraries(example_swig Example)
 
 set(JAVA_BUNDLE "${CMAKE_HOME_DIRECTORY}/java_bundle.sh")
 set(JAVA_BUNDLE_SO_FILES "${CMAKE_HOME_DIRECTORY}/libexample_swig.so")
 set(MANIFEST_FILE "${CMAKE_HOME_DIRECTORY}/MANIFEST")
 ADD_CUSTOM_COMMAND(TARGET example_swig
                    POST_BUILD
-		   DEPEND example_swig_jar
+		   DEPEND example/example.java example_swig_jar 
 		   COMMAND ${JAVA_BUNDLE} "example_swig_jar.jar" "${Java_JAVA_EXECUTABLE}" "example.NativeLib" "${CMAKE_STRIP}" -so ${JAVA_BUNDLE_SO_FILES} -txt ${JAVA_BUNDLE_TXT_FILES}
                    COMMAND ${JAVA_ARCHIVE} -uvf "example_swig_jar.jar" "NATIVE"
 		   COMMAND ${CMAKE_COMMAND} -E echo "Class-Path: ." > ${MANIFEST_FILE}
